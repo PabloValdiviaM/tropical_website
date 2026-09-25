@@ -1,0 +1,6 @@
+{
+  "name": "Diario Asombro — Inspírate con nosotros",
+  "description": "Hero centrado sobre video cinematográfico, con tipografía Inter e Instrument Serif, cápsula de suscriptores y formulario de suscripción.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-black: #000000;
+    --text-primary: #ffffff;
+  }
+
+  body {
+    background-color: #000000;
+    color: #ffffff;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+.font-sans-ui {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.font-serif-italic {
+  font-family: 'Instrument Serif', Georgia, Cambria, serif;
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* H1 exact specifications:
+   - Tamaños: 48px en móvil, 72px en tablet, 96px en desktop
+   - Interlineado: 0.92
+   - Espaciado entre letras: -2px
+   - Primera parte sans de peso 500 y segunda serif cursiva de peso 400
+*/
+.hero-title {
+  line-height: 0.92;
+  letter-spacing: -2px;
+}
+
+@media (max-width: 480px) {
+  .hero-title {
+    font-size: clamp(28px, 7.5vw, 38px);
+    letter-spacing: -1px;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 639px) {
+  .hero-title {
+    font-size: clamp(38px, 8vw, 48px);
+    letter-spacing: -1.5px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .hero-title {
+    font-size: clamp(48px, 7vw, 72px);
+    letter-spacing: -2px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .hero-title {
+    font-size: clamp(68px, 6.5vw, 96px);
+    letter-spacing: -2px;
+  }
+}
+
+/* Entrada escalonada de 0.8s: opacidad y ascenso */
+@keyframes heroEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-entrance {
+  animation: heroEntrance 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
