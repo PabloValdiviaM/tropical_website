@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Compass, Gauge, Zap, Activity, ShieldCheck, ChevronDown, ArrowUpRight, Flame, Trees, Sparkles, Navigation } from 'lucide-react';
 
-// Secuencia completa de 50 cuadros en alta resolución cargados en /public/frames
-// Mapeados con correlación directa y secuencial: frame_001.png hasta frame_050.png
-const TOTAL_FRAMES = 50;
-const FRAMES_LIST = Array.from({ length: TOTAL_FRAMES }, (_, i) => {
-  const num = String(i + 1).padStart(3, '0');
-  return `/frames/frame_${num}.png`;
-});
+// Lista completa de los 75 cuadros en alta resolución cargados en /public/frames
+// frame_001.png a frame_051.png (secuencial 1 a 51) y frame_053.png a frame_099.png (53 a 99)
+const FRAMES_LIST: string[] = [
+  ...Array.from({ length: 51 }, (_, i) => `/frames/frame_${String(i + 1).padStart(3, '0')}.png`),
+  ...Array.from({ length: 24 }, (_, i) => `/frames/frame_${String(53 + i * 2).padStart(3, '0')}.png`),
+];
+const TOTAL_FRAMES = FRAMES_LIST.length;
 
 export default function App() {
   const [email, setEmail] = useState('');
@@ -19,6 +19,7 @@ export default function App() {
   const [currentFrameIndex, setCurrentFrameIndex] = useState(1);
   const [framesLoadedCount, setFramesLoadedCount] = useState(0);
 
+  const currentFrameRef = useRef(1);
   const videoRef = useRef<HTMLVideoElement>(null);
   const heroRef = useRef<HTMLElement>(null);
   const scrollyContainerRef = useRef<HTMLDivElement>(null);
@@ -38,6 +39,54 @@ export default function App() {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
+  // Función para dibujar el frame con object-fit: cover exacto y fallback inteligente si un frame aún no ha descargado
+  const drawFrame = (frameNum: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const imgIndex = Math.max(0, Math.min(TOTAL_FRAMES - 1, frameNum - 1));
+    let img = imagesRef.current[imgIndex];
+
+    // Si el frame solicitado no ha completado su carga, buscar el cuadro cargado más próximo para evitar parpadeos negros
+    if (!img || !img.complete || !img.naturalWidth) {
+      let nearestDist = Infinity;
+      let nearestImg: HTMLImageElement | null = null;
+      for (let i = 0; i < imagesRef.current.length; i++) {
+        const candidate = imagesRef.current[i];
+        if (candidate && candidate.complete && candidate.naturalWidth > 0) {
+          const dist = Math.abs(i - imgIndex);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestImg = candidate;
+          }
+        }
+      }
+      if (nearestImg) {
+        img = nearestImg;
+      }
+    }
+
+    if (!img || !img.complete || !img.naturalWidth) return;
+
+    const cw = canvas.width;
+    const ch = canvas.height;
+    if (cw === 0 || ch === 0) return;
+
+    const iw = img.naturalWidth || 1920;
+    const ih = img.naturalHeight || 1080;
+
+    // Calcular scale cover exacto sin deformación
+    const scale = Math.max(cw / iw, ch / ih);
+    const nw = iw * scale;
+    const nh = ih * scale;
+    const ox = (cw - nw) / 2;
+    const oy = (ch - nh) / 2;
+
+    ctx.drawImage(img, ox, oy, nw, nh);
+  };
+
   // Precargar las imágenes de la secuencia en alta resolución (.png)
   useEffect(() => {
     const imgs: HTMLImageElement[] = [];
@@ -49,12 +98,12 @@ export default function App() {
       img.onload = () => {
         loaded++;
         setFramesLoadedCount(loaded);
-        if (idx === 0 && canvasRef.current) {
-          drawFrame(1);
+        // Si se acaba de cargar el primer frame o el frame actualmente visible, dibujarlo
+        if (idx === 0 || idx === currentFrameRef.current - 1) {
+          drawFrame(currentFrameRef.current);
         }
       };
       img.onerror = () => {
-        // En caso de que se intente cargar un formato alternativo
         console.warn(`Frame no disponible en ${src}`);
       };
       imgs.push(img);
@@ -62,65 +111,60 @@ export default function App() {
     imagesRef.current = imgs;
   }, []);
 
-  // Función para dibujar el frame con object-fit: cover exacto en el canvas
-  const drawFrame = (frameNum: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const imgIndex = Math.max(0, Math.min(TOTAL_FRAMES - 1, frameNum - 1));
-    const img = imagesRef.current[imgIndex];
-    if (!img || !img.complete) return;
-
-    const cw = canvas.width;
-    const ch = canvas.height;
-    const iw = img.naturalWidth || 1920;
-    const ih = img.naturalHeight || 1088;
-
-    // Calcular scale cover
-    const scale = Math.max(cw / iw, ch / ih);
-    const nw = iw * scale;
-    const nh = ih * scale;
-    const ox = (cw - nw) / 2;
-    const oy = (ch - nh) / 2;
-
-    ctx.clearRect(0, 0, cw, ch);
-    ctx.drawImage(img, ox, oy, nw, nh);
-  };
-
-  // Ajustar resolución del canvas a viewport
+  // Ajustar resolución del canvas a viewport únicamente en resize real (no en cada cuadro de scroll)
   useEffect(() => {
     const resizeCanvas = () => {
       if (!canvasRef.current) return;
-      const dpr = window.devicePixelRatio || 1;
-      canvasRef.current.width = window.innerWidth * dpr;
-      canvasRef.current.height = window.innerHeight * dpr;
-      drawFrame(currentFrameIndex);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.floor(window.innerWidth * dpr);
+      const h = Math.floor(window.innerHeight * dpr);
+
+      if (canvasRef.current.width !== w || canvasRef.current.height !== h) {
+        canvasRef.current.width = w;
+        canvasRef.current.height = h;
+      }
+      drawFrame(currentFrameRef.current);
     };
 
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     return () => window.removeEventListener('resize', resizeCanvas);
-  }, [currentFrameIndex]);
+  }, []);
 
-  // Listener de Scroll para el Scrollytelling
+  // Listener de Scroll para el Scrollytelling sincronizado mediante requestAnimationFrame
   useEffect(() => {
+    let ticking = false;
+
     const handleScroll = () => {
-      if (!scrollyContainerRef.current) return;
-      const rect = scrollyContainerRef.current.getBoundingClientRect();
-      const containerHeight = rect.height - window.innerHeight;
-      if (containerHeight <= 0) return;
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(() => {
+          ticking = false;
+          if (!scrollyContainerRef.current) return;
+          const rect = scrollyContainerRef.current.getBoundingClientRect();
+          const containerHeight = rect.height - window.innerHeight;
+          if (containerHeight <= 0) return;
 
-      const progress = Math.max(0, Math.min(1, -rect.top / containerHeight));
-      setScrollProgress(progress);
+          const progress = Math.max(0, Math.min(1, -rect.top / containerHeight));
+          setScrollProgress(progress);
 
-      const frameNumber = Math.max(1, Math.min(TOTAL_FRAMES, Math.floor(progress * (TOTAL_FRAMES - 1)) + 1));
-      setCurrentFrameIndex(frameNumber);
-      drawFrame(frameNumber);
+          const frameNumber = Math.max(
+            1,
+            Math.min(TOTAL_FRAMES, Math.floor(progress * (TOTAL_FRAMES - 1)) + 1)
+          );
+
+          if (currentFrameRef.current !== frameNumber) {
+            currentFrameRef.current = frameNumber;
+            setCurrentFrameIndex(frameNumber);
+            drawFrame(frameNumber);
+          }
+        });
+      }
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -178,7 +222,14 @@ export default function App() {
   };
 
   // Cálculo de opacidad y desplazamiento para cada acto del scrollytelling
-  const getActOpacity = (start: number, end: number, fadeDist = 0.05) => {
+  const getActOpacity = (start: number, end: number, fadeDist = 0.05, isLast = false) => {
+    if (isLast) {
+      if (scrollProgress < start - fadeDist) return 0;
+      if (scrollProgress < start) {
+        return (scrollProgress - (start - fadeDist)) / fadeDist;
+      }
+      return 1; // Permanece visible hasta el final del recorrido sin fundido en negro prematuro
+    }
     if (scrollProgress < start - fadeDist || scrollProgress > end + fadeDist) return 0;
     if (scrollProgress >= start && scrollProgress <= end) return 1;
     if (scrollProgress < start) {
@@ -188,9 +239,10 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-black text-white selection:bg-white/20 selection:text-white font-sans-ui overflow-x-hidden">
+    <div className="relative min-h-screen w-full bg-black text-white selection:bg-white/20 selection:text-white font-sans-ui overflow-x-clip">
       {/* ===================== HERO SECTION ===================== */}
       <section
+        id="inicio"
         ref={heroRef}
         className="relative min-h-screen w-full flex flex-col justify-between"
         aria-label="Hero Diario Asombro"
@@ -212,11 +264,11 @@ export default function App() {
                 objectPosition: 'center',
               }}
             >
+              <source src="/media/orange-car-jungle.mp4" type="video/mp4" />
               <source
                 src="https://res.cloudinary.com/e0ixhoqu/video/upload/v1790293464/Orange_car_driving_through_jungle_20260924184002.mp4"
                 type="video/mp4"
               />
-              <source src="/media/orange-car-jungle.mp4" type="video/mp4" />
             </video>
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-black/80 text-white/50 text-sm">
@@ -471,11 +523,11 @@ export default function App() {
       </section>
 
       {/* ===================== SECCIÓN SCROLLYTELLING (SECUENCIA DE IMÁGENES) ===================== */}
-      {/* Contenedor de 400vh para permitir un scroll pausado, fluido y cinemático */}
+      {/* Contenedor optimizado a 380vh para un ritmo fluido, sin paradas vacías ni desplazamientos excesivos */}
       <section
         id="expedicion"
         ref={scrollyContainerRef}
-        className="relative h-[450vh] w-full bg-black"
+        className="relative h-[380vh] w-full bg-black"
         aria-label="Experiencia de Scrollytelling interactivo del vehículo en la selva"
       >
         {/* Sticky Canvas Viewport fijado a pantalla completa */}
@@ -495,15 +547,16 @@ export default function App() {
 
           {/* Sombreado inferior sutil y delimitador de borde */}
           <div className="absolute bottom-0 inset-x-0 h-24 md:h-32 bg-gradient-to-t from-black/75 to-transparent pointer-events-none z-10" />
-          <div className="absolute inset-0 bg-radial-gradient from-transparent via-transparent to-black/35 pointer-events-none z-10" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(0,0,0,0.45)_100%)] pointer-events-none z-10" />
 
-          {/* ================= ACTO 1: 0% - 25% (Aparición por la izquierda) ================= */}
+          {/* ================= ACTO 1: 4% - 22% (Aparición por la izquierda) ================= */}
           {/* En las primeras tomas el auto aparece al fondo sobre el camino empedrado */}
           <div
             className="absolute inset-0 max-w-[1440px] mx-auto px-6 md:px-16 pointer-events-none flex flex-col justify-center items-start transition-all duration-300 z-20"
             style={{
               opacity: getActOpacity(0.04, 0.22),
               transform: `translateY(${(1 - getActOpacity(0.04, 0.22)) * 16}px)`,
+              visibility: getActOpacity(0.04, 0.22) > 0.01 ? 'visible' : 'hidden',
             }}
           >
             <div className="max-w-[480px] p-6 md:p-8 rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.8)]">
@@ -527,13 +580,14 @@ export default function App() {
             </div>
           </div>
 
-          {/* ================= ACTO 2: 28% - 52% (Aceleración y Dinámica) ================= */}
+          {/* ================= ACTO 2: 28% - 50% (Aceleración y Dinámica) ================= */}
           {/* El auto avanza hacia el plano medio, texto colocado a la derecha con contraste óptimo */}
           <div
             className="absolute inset-0 max-w-[1440px] mx-auto px-6 md:px-16 pointer-events-none flex flex-col justify-center items-end transition-all duration-300 z-20"
             style={{
-              opacity: getActOpacity(0.28, 0.52),
-              transform: `translateY(${(1 - getActOpacity(0.28, 0.52)) * 16}px)`,
+              opacity: getActOpacity(0.28, 0.50),
+              transform: `translateY(${(1 - getActOpacity(0.28, 0.50)) * 16}px)`,
+              visibility: getActOpacity(0.28, 0.50) > 0.01 ? 'visible' : 'hidden',
             }}
           >
             <div className="max-w-[500px] p-6 md:p-8 rounded-2xl bg-black/45 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.85)] text-left md:text-left">
@@ -569,13 +623,14 @@ export default function App() {
             </div>
           </div>
 
-          {/* ================= ACTO 3: 56% - 80% (Primer plano y detalles del auto) ================= */}
+          {/* ================= ACTO 3: 56% - 76% (Primer plano y detalles del auto) ================= */}
           {/* El auto ocupa el primer plano con su color naranja vibrante y detalles aerodinámicos */}
           <div
             className="absolute inset-0 max-w-[1440px] mx-auto px-6 md:px-16 pointer-events-none flex flex-col justify-start md:justify-center items-start pt-24 md:pt-0 transition-all duration-300 z-20"
             style={{
-              opacity: getActOpacity(0.56, 0.8),
-              transform: `translateY(${(1 - getActOpacity(0.56, 0.8)) * 16}px)`,
+              opacity: getActOpacity(0.56, 0.76),
+              transform: `translateY(${(1 - getActOpacity(0.56, 0.76)) * 16}px)`,
+              visibility: getActOpacity(0.56, 0.76) > 0.01 ? 'visible' : 'hidden',
             }}
           >
             <div className="max-w-[480px] p-6 md:p-8 rounded-2xl bg-black/45 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.85)]">
@@ -600,12 +655,13 @@ export default function App() {
             </div>
           </div>
 
-          {/* ================= ACTO 4: 83% - 100% (Cierre cinemático y llamado a la acción) ================= */}
+          {/* ================= ACTO 4: 82% - 100% (Cierre cinemático y llamado a la acción) ================= */}
           <div
             className="absolute inset-0 max-w-[1440px] mx-auto px-6 md:px-16 pointer-events-none flex flex-col justify-center items-center text-center transition-all duration-300 z-20"
             style={{
-              opacity: getActOpacity(0.83, 1.0),
-              transform: `translateY(${(1 - getActOpacity(0.83, 1.0)) * 16}px)`,
+              opacity: getActOpacity(0.82, 1.0, 0.05, true),
+              transform: `translateY(${(1 - getActOpacity(0.82, 1.0, 0.05, true)) * 16}px)`,
+              visibility: getActOpacity(0.82, 1.0, 0.05, true) > 0.01 ? 'visible' : 'hidden',
             }}
           >
             <div className="max-w-[620px] p-8 md:p-10 rounded-3xl bg-black/55 backdrop-blur-2xl border border-white/15 shadow-[0_12px_48px_rgba(0,0,0,0.95)] pointer-events-auto">
